@@ -1,0 +1,148 @@
+project-root/
+├── pages/
+│   └── LoginPage.ts
+├── support/
+│   ├── helpers.ts
+│   └── testDataLoader.ts
+├── testData/
+│   ├── sample.json
+│   └── sample.xlsx
+├── tests/
+│   └── covid/
+│       └── login.spec.ts
+├── .env
+├── playwright.config.ts
+├── tsconfig.json
+├── package.json
+└── README.md
+
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+import * as dotenv from 'dotenv';
+dotenv.config();
+import path from 'path';
+
+const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+export default defineConfig({
+  testDir: './tests',
+  timeout: 30 * 1000,
+  expect: {
+    timeout: 5000
+  },
+  reporter: [['html', { outputFolder: `playwright-report/report-${timestamp}`, open: 'never' }]],
+  use: {
+    headless: true,
+    viewport: { width: 1280, height: 720 },
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    trace: 'retain-on-failure',
+    baseURL: process.env.BASE_URL,
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ]
+});
+
+// support/testDataLoader.ts
+import * as XLSX from 'xlsx';
+import * as fs from 'fs';
+
+export function getTestData(key: string): any {
+  if (key.startsWith('$')) {
+    const filePath = './testData/sample.xlsx';
+    const sheetName = 'Sheet1';
+    const workbook = XLSX.readFile(filePath);
+    const sheet = workbook.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(sheet);
+    const found = json.find((row: any) => row.Key === key.substring(1));
+    return found?.Value;
+  }
+  if (key.startsWith('£')) {
+    const data = JSON.parse(fs.readFileSync('./testData/sample.json', 'utf8'));
+    return data[key.substring(1)];
+  }
+  return key;
+}
+
+// pages/LoginPage.ts
+import { Page } from '@playwright/test';
+
+export class LoginPage {
+  constructor(private page: Page) {}
+
+  async goto() {
+    await this.page.goto('/login');
+  }
+
+  async login(username: string, password: string) {
+    await this.page.fill('#username', username);
+    await this.page.fill('#password', password);
+    await this.page.click('#login');
+  }
+}
+
+// tests/covid/login.spec.ts
+import { test, expect } from '@playwright/test';
+import { LoginPage } from '../../pages/LoginPage';
+import { getTestData } from '../../support/testDataLoader';
+
+test('Valid login', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  await loginPage.goto();
+
+  const username = getTestData('$username');
+  const password = getTestData('£password');
+
+  await loginPage.login(username, password);
+  await expect(page).toHaveURL('/dashboard');
+});
+
+// .env
+BASE_URL=https://example.com
+
+// testData/sample.json
+{
+  "password": "mySecret123"
+}
+
+// sample.xlsx (Sheet1)
+// | Key      | Value       |
+// |----------|-------------|
+// | username | test_user_1 |
+
+// package.json
+{
+  "name": "playwright-ts-framework",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "playwright test",
+    "report": "npx playwright show-report"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.1",
+    "typescript": "^5.0.0"
+  }
+}
+
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts"]
+}
