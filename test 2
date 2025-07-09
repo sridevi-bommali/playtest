@@ -1,0 +1,119 @@
+// Directory structure:
+// - tests/
+// - pages/
+// - support/
+// - testData/
+// - playwright.config.ts
+// - .env
+
+// 1. Install dependencies:
+// npm init -y
+// npm install -D playwright @playwright/test typescript ts-node dotenv xlsx
+
+// 2. tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}
+
+// 3. .env
+URL=https://your-app-url.com
+USERNAME=admin
+PASSWORD=secret
+
+// 4. playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+export default defineConfig({
+  timeout: 60000,
+  testDir: './tests',
+  use: {
+    baseURL: process.env.URL,
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    trace: 'on',
+  },
+  reporter: [['html', { outputFolder: `html-report-${new Date().toISOString().replace(/[:.]/g, '-')}` }]],
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    }
+  ]
+});
+
+// 5. support/testDataLoader.ts
+import * as XLSX from 'xlsx';
+import * as fs from 'fs';
+
+export function getData(value: string): any {
+  if (value.startsWith('$')) {
+    const workbook = XLSX.readFile('testData/testdata.xlsx');
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet);
+    return json.find(row => row.key === value.substring(1))?.value;
+  } else if (value.startsWith('£')) {
+    const jsonData = JSON.parse(fs.readFileSync('testData/testdata.json', 'utf-8'));
+    return jsonData[value.substring(1)];
+  } else {
+    return value;
+  }
+}
+
+// 6. support/utils.ts
+export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 7. pages/LoginPage.ts
+import { Page } from '@playwright/test';
+
+export class LoginPage {
+  constructor(private page: Page) {}
+
+  async goto() {
+    await this.page.goto('/login');
+  }
+
+  async login(username: string, password: string) {
+    await this.page.fill('#username', username);
+    await this.page.fill('#password', password);
+    await this.page.click('button[type="submit"]');
+  }
+}
+
+// 8. testData/testdata.xlsx
+// Create an Excel file with columns: key | value
+// Example row: loginUser | testuser
+
+// 9. testData/testdata.json
+{
+  "loginUser": "jsonuser",
+  "loginPassword": "jsonpass"
+}
+
+// 10. tests/covid/sample.spec.ts
+import { test, expect } from '@playwright/test';
+import { LoginPage } from '../../pages/LoginPage';
+import { getData } from '../../support/testDataLoader';
+
+test('Login Test with data driven', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  await loginPage.goto();
+
+  const username = getData('$loginUser');
+  const password = getData('£loginPassword');
+  await loginPage.login(username, password);
+
+  await expect(page).toHaveURL(/dashboard/);
+});
